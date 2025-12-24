@@ -551,139 +551,263 @@ def main():
     with tab2:
         st.header("Model Performance & Backtesting")
         
-        # Backtesting results
-        st.subheader("Backtesting Results (Test Set)")
-        st.markdown("*Simulated betting performance using Kelly Criterion*")
+        # Get test data
+        split_idx = int(len(df) * 0.8)
+        df_test = df.iloc[split_idx:].copy()
         
-        # Key findings - prominently displayed
-        st.warning("""
-        **Key Finding: Negative ROI**
+        # Ensure Date column is datetime
+        if df_test['Date'].dtype != 'datetime64[ns]':
+            df_test['Date'] = pd.to_datetime(df_test['Date'])
         
-        Despite good probability calibration, the model shows negative returns in backtesting:
-        - XGBoost ROI: -6.3%
-        - Baseline ROI: -3.7%
-        
-        This reflects the strong efficiency of betting markets - bookmakers' odds are extremely hard to beat consistently.
+        # Backtesting controls section
+        st.subheader("📅 Time Period Selection")
+        st.info("""
+        **Interactive Backtesting**: Select a custom date range to analyze model performance over specific time periods.
+        This helps explore performance variance, seasonal effects, and sample size impact.
         """)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total Bets", "114", help="Number of value bets identified")
-        with col2:
-            st.metric("ROI", "-6.3%", delta="-6.3%", delta_color="inverse", help="Return on Investment")
-        with col3:
-            st.metric("Win Rate", "39.5%", help="Percentage of winning bets")
-        with col4:
-            st.metric("Max Drawdown", "-18.2%", delta="-18.2%", delta_color="inverse", help="Largest peak-to-trough decline")
-        
-        st.markdown("---")
-        
-        # Model comparison
-        st.subheader("Model Comparison")
-        
-        comparison_data = {
-            'Metric': ['Accuracy', 'Brier Score', 'ROI', 'Win Rate', 'Total Bets', 'Avg Stake', 'Max Drawdown'],
-            'XGBoost (Calibrated)': ['52.4%', '0.179', '-6.3%', '39.5%', '114', '1.8%', '-18.2%'],
-            'Baseline (Logistic)': ['51.8%', '0.182', '-3.7%', '41.2%', '102', '1.6%', '-12.5%']
-        }
-        
-        comparison_df = pd.DataFrame(comparison_data)
-        st.dataframe(comparison_df, use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Key insights
-        st.subheader("Key Insights")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("""
-            **What Worked:**
-            - Excellent probability calibration (Brier < 0.19)
-            - Proper time-series validation
-            - No data leakage (verified with unit tests)
-            - Kelly Criterion prevents catastrophic losses
-            - Realistic backtesting framework
-            """)
+            # Date range selector
+            min_date = df_test['Date'].min().date()
+            max_date = df_test['Date'].max().date()
+            
+            start_date = st.date_input(
+                "Start Date",
+                value=min_date,
+                min_value=min_date,
+                max_value=max_date,
+                help="First match date to include in backtest"
+            )
         
         with col2:
-            st.markdown("""
-            **Why Negative ROI?**
-            - Efficient Markets: Bookmaker odds are very accurate
-            - Bookmaker Edge: Built-in overround (~5-8% margin)
-            - Model Limitations: Limited features, simple models
-            - Sample Size: Only 380 test matches
-            - Realistic Result: Most bettors lose money
-            """)
+            end_date = st.date_input(
+                "End Date",
+                value=max_date,
+                min_value=min_date,
+                max_value=max_date,
+                help="Last match date to include in backtest"
+            )
+        
+        # Filter data by date range
+        df_filtered = df_test[
+            (df_test['Date'].dt.date >= start_date) & 
+            (df_test['Date'].dt.date <= end_date)
+        ].reset_index(drop=True)
+        
+        # Show period info
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("📊 Matches in Period", len(df_filtered))
+        with col2:
+            st.metric("📅 Days Span", (end_date - start_date).days)
+        with col3:
+            period_pct = (len(df_filtered) / len(df_test)) * 100 if len(df_test) > 0 else 0
+            st.metric("📈 % of Test Set", f"{period_pct:.1f}%")
+        
+        if len(df_filtered) == 0:
+            st.error("No matches in selected date range. Please adjust dates.")
+        else:
+            st.markdown("---")
+            
+            # Run backtest on filtered data
+            st.subheader("🎯 Backtesting Results")
+            st.markdown(f"*Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}*")
+            
+            # Prepare features for filtered data
+            feature_cols = [
+                'Home_Elo', 'Away_Elo', 'Elo_Diff',
+                'Home_Goals_L5', 'Away_Goals_L5',
+                'Home_Conceded_L5', 'Away_Conceded_L5',
+                'Home_Shots_L5', 'Away_Shots_L5',
+                'Home_ShotsOnTarget_L5', 'Away_ShotsOnTarget_L5',
+                'Home_Form_L5', 'Away_Form_L5',
+                'Goals_Diff_L5', 'Form_Diff_L5'
+            ]
+            
+            X_filtered = df_filtered[feature_cols]
+            model_probs = model.predict_proba(X_filtered)
+            
+            # Run backtest using the backtester class
+            sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+            from evaluation.backtest import BettingBacktester
+            
+            backtester = BettingBacktester(
+                initial_bankroll=bankroll,
+                kelly_fraction=kelly_fraction,
+                ev_threshold=ev_threshold
+            )
+            
+            results = backtester.run(df_filtered, model_probs)
+            
+            # Display key metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Bets", results['total_bets'], help="Number of value bets placed")
+            with col2:
+                roi_color = "normal" if results['roi'] >= 0 else "inverse"
+                st.metric("ROI", f"{results['roi']*100:.2f}%", 
+                         delta=f"{results['roi']*100:.2f}%", 
+                         delta_color=roi_color, 
+                         help="Return on Investment")
+            with col3:
+                st.metric("Win Rate", f"{results['win_rate']*100:.1f}%", 
+                         help="Percentage of winning bets")
+            with col4:
+                st.metric("Max Drawdown", f"{results['max_drawdown']*100:.1f}%", 
+                         delta=f"{results['max_drawdown']*100:.1f}%",
+                         delta_color="inverse",
+                         help="Largest peak-to-trough decline")
+            
+            # Show profit/loss
+            profit_col1, profit_col2, profit_col3 = st.columns(3)
+            with profit_col1:
+                st.metric("Initial Bankroll", f"${results['initial_bankroll']:.2f}")
+            with profit_col2:
+                st.metric("Final Bankroll", f"${results['final_bankroll']:.2f}")
+            with profit_col3:
+                profit_color = "normal" if results['total_profit'] >= 0 else "inverse"
+                st.metric("Total Profit", f"${results['total_profit']:.2f}",
+                         delta=f"${results['total_profit']:.2f}",
+                         delta_color=profit_color)
+            
+            # Interpretation
+            if results['roi'] > 0:
+                st.success(f"✅ **Profitable Period!** Model achieved {results['roi']*100:.2f}% ROI over {len(df_filtered)} matches.")
+            elif results['roi'] > -0.10:
+                st.warning(f"⚠️ **Slight Loss**: Model lost {abs(results['roi']*100):.2f}% over this period. Small sample variance may be a factor.")
+            else:
+                st.error(f"❌ **Significant Loss**: Model lost {abs(results['roi']*100):.2f}% over this period.")
+            
+            st.markdown("---")
+            
+            # Bankroll evolution chart
+            st.subheader("💰 Bankroll Evolution Over Time")
+            
+            history_df = results['history']
+            bet_history = history_df[history_df['bet_placed']].reset_index(drop=True)
+            
+            if len(bet_history) > 0:
+                fig, ax = plt.subplots(figsize=(12, 5))
+                
+                bankroll_series = bet_history['bankroll'].values
+                bet_numbers = range(len(bankroll_series))
+                
+                ax.plot(bet_numbers, bankroll_series, linewidth=2, color='steelblue', label='Bankroll')
+                ax.axhline(y=bankroll, color='red', linestyle='--', alpha=0.5, label='Starting Bankroll')
+                ax.fill_between(bet_numbers, bankroll_series, bankroll, alpha=0.3)
+                
+                ax.set_xlabel('Bet Number')
+                ax.set_ylabel('Bankroll ($)')
+                ax.set_title(f'Bankroll Evolution ({start_date} to {end_date})')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                
+                # Annotate peak and final if enough bets
+                if len(bankroll_series) > 5:
+                    peak_idx = np.argmax(bankroll_series)
+                    ax.annotate(f'Peak: ${bankroll_series[peak_idx]:.2f}', 
+                               xy=(peak_idx, bankroll_series[peak_idx]), 
+                               xytext=(peak_idx + len(bankroll_series)*0.05, bankroll_series[peak_idx] + bankroll*0.05),
+                               arrowprops=dict(arrowstyle='->', color='green', lw=1.5))
+                    
+                    final_val = bankroll_series[-1]
+                    ax.annotate(f'Final: ${final_val:.2f}\n(ROI: {results["roi"]*100:.1f}%)', 
+                               xy=(len(bankroll_series)-1, final_val), 
+                               xytext=(len(bankroll_series)*0.7, final_val - bankroll*0.1),
+                               arrowprops=dict(arrowstyle='->', color='red' if results['roi'] < 0 else 'green', lw=1.5))
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                st.caption(f"*Bankroll evolution over {len(bet_history)} bets with {kelly_fraction:.0%} Kelly staking*")
+            else:
+                st.info("No bets placed in this period. Try lowering the EV threshold or selecting a different date range.")
+            
+            st.markdown("---")
+            
+            # Sample size analysis
+            st.subheader("📊 Sample Size & Variance")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"""
+                **Period Statistics:**
+                - Matches: {len(df_filtered)}
+                - Bets Placed: {results['total_bets']}
+                - Bet Frequency: {(results['total_bets']/len(df_filtered)*100):.1f}%
+                - Avg Stake: ${results['total_staked']/results['total_bets'] if results['total_bets'] > 0 else 0:.2f}
+                """)
+            
+            with col2:
+                # Provide context on sample size
+                if len(df_filtered) < 50:
+                    st.warning("⚠️ **Small Sample**: Results may be heavily influenced by luck/variance.")
+                elif len(df_filtered) < 150:
+                    st.info("ℹ️ **Medium Sample**: Moderate confidence in results, but variance still significant.")
+                else:
+                    st.success("✅ **Large Sample**: Higher confidence in results due to larger sample size.")
+            
+            st.markdown("---")
+            
+            # Comparison with full test set
+            st.subheader("📈 Comparison with Full Test Period")
+            
+            # Full period stats (hardcoded from evaluation report for comparison)
+            full_test_stats = {
+                'XGBoost (Calibrated)': {'roi': -0.636, 'total_bets': 357, 'win_rate': 0.272},
+                'Baseline (Logistic)': {'roi': -0.411, 'total_bets': 331, 'win_rate': 0.335}
+            }
+            
+            model_name = "XGBoost (Calibrated)" if model_choice == "XGBoost (Calibrated)" else "Baseline (Logistic)"
+            full_stats = full_test_stats[model_name]
+            
+            comparison_data = {
+                'Metric': ['ROI', 'Total Bets', 'Win Rate', 'Matches'],
+                'Selected Period': [
+                    f"{results['roi']*100:.2f}%",
+                    results['total_bets'],
+                    f"{results['win_rate']*100:.1f}%",
+                    len(df_filtered)
+                ],
+                'Full Test Set': [
+                    f"{full_stats['roi']*100:.2f}%",
+                    full_stats['total_bets'],
+                    f"{full_stats['win_rate']*100:.1f}%",
+                    len(df_test)
+                ]
+            }
+            
+            comparison_df = pd.DataFrame(comparison_data)
+            st.dataframe(comparison_df, use_container_width=True)
+            
+            # Insight
+            roi_diff = results['roi'] - full_stats['roi']
+            if abs(roi_diff) > 0.1:
+                if roi_diff > 0:
+                    st.success(f"✨ This period performed **{roi_diff*100:.1f}% better** than the full test set!")
+                else:
+                    st.warning(f"⬇️ This period performed **{abs(roi_diff)*100:.1f}% worse** than the full test set.")
+            else:
+                st.info(f"ℹ️ This period performed similarly to the full test set (±{abs(roi_diff)*100:.1f}% difference).")
         
         st.markdown("---")
         
         # Academic value
         st.info("""
-        **Academic Value of This Result:**
+        **🎓 Educational Value of Time Period Analysis:**
         
-        This negative ROI is actually valuable for learning:
+        1. **Sample Size Matters**: Small periods (50 matches) show high variance; large periods (300+) are more reliable
+        2. **No Cherry-Picking**: Honest reporting includes both good and bad periods
+        3. **Variance Reality**: Even with a 60% win rate model, individual periods can lose money
+        4. **Market Efficiency**: Consistent profitability across all periods is extremely rare
+        5. **Risk Management**: Kelly Criterion prevents complete bankroll loss even in bad periods
         
-        1. Scientific Integrity: We report honest results, not cherry-picked ones
-        2. Market Efficiency: Demonstrates real-world challenge of beating markets
-        3. Proper Methodology: Shows correct ML workflow even when results aren't perfect
-        4. Risk Management: Kelly Criterion limits losses to acceptable levels
-        5. Realistic Expectations: Prepares for real business analytics challenges
-        
-        A model with 52% accuracy that loses money is more educational than a 
-        fabricated 80% accuracy model.
+        Try different date ranges to see how results vary!
         """)
-        
-        st.markdown("---")
-        
-        # Performance over time visualization
-        st.subheader("Bankroll Evolution (Simulated)")
-        
-        # Create sample bankroll evolution data
-        np.random.seed(42)
-        num_bets = 114
-        initial_bankroll = 100
-        
-        # Simulate realistic evolution matching the -6.3% ROI
-        returns = np.random.normal(-0.055, 0.3, num_bets)  # Negative mean
-        bankroll = [initial_bankroll]
-        
-        for r in returns:
-            bankroll.append(bankroll[-1] * (1 + r * 0.018))  # Small stakes
-        
-        # Ensure final bankroll matches -6.3% ROI
-        final_adjustment = 93.7 / bankroll[-1]
-        bankroll = [b * final_adjustment for b in bankroll]
-        
-        fig, ax = plt.subplots(figsize=(12, 5))
-        ax.plot(range(len(bankroll)), bankroll, linewidth=2, color='steelblue')
-        ax.axhline(y=100, color='red', linestyle='--', alpha=0.5, label='Starting Bankroll')
-        ax.fill_between(range(len(bankroll)), bankroll, 100, alpha=0.3)
-        
-        ax.set_xlabel('Bet Number')
-        ax.set_ylabel('Bankroll ($)')
-        ax.set_title('Bankroll Evolution Over Time (Kelly Staking)')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        
-        # Annotate peak and final
-        peak_idx = np.argmax(bankroll)
-        ax.annotate(f'Peak: ${bankroll[peak_idx]:.1f}', 
-                   xy=(peak_idx, bankroll[peak_idx]), 
-                   xytext=(peak_idx + 10, bankroll[peak_idx] + 5),
-                   arrowprops=dict(arrowstyle='->', color='green'))
-        
-        ax.annotate(f'Final: $93.70\n(ROI: -6.3%)', 
-                   xy=(len(bankroll)-1, bankroll[-1]), 
-                   xytext=(len(bankroll)-20, bankroll[-1] - 10),
-                   arrowprops=dict(arrowstyle='->', color='red'))
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-        
-        st.caption("*Simulated bankroll starting at $100, betting with Kelly Criterion*")
     
     with tab3:
         st.header("Visualizations & Exploratory Analysis")

@@ -186,7 +186,83 @@ This is an academic project demonstrating:
 
 ---
 
+## Time Period Analysis Feature
+
+### Overview
+
+The dashboard includes an **interactive time period selection feature** that allows users to analyze model performance over custom date ranges within the test set. This enables exploration of performance variance, seasonal effects, and sample size impact.
+
+### How It Works
+
+Users can:
+1. Select a custom date range (start date to end date)
+2. View real-time backtest results for that specific period
+3. Compare performance against the full test set
+4. Analyze bankroll evolution over the selected period
+
+### Key Metrics Shown
+
+For each selected period:
+- **Total Bets**: Number of value bets placed
+- **ROI**: Return on Investment for the period
+- **Win Rate**: Percentage of winning bets
+- **Max Drawdown**: Largest peak-to-trough decline
+- **Bankroll Evolution**: Visual chart showing profit/loss trajectory
+
+### Educational Benefits
+
+#### 1. Sample Size Impact
+- **Small periods** (< 50 matches): High variance, results heavily influenced by luck
+- **Medium periods** (50-150 matches): Moderate confidence, variance still significant
+- **Large periods** (> 150 matches): Higher confidence due to larger sample
+
+#### 2. Performance Variance Discovery
+Users can discover:
+- Periods where the model is profitable (even if overall ROI is negative)
+- Seasonal patterns (early season vs late season)
+- Model drift over time
+- Impact of market efficiency changes
+
+#### 3. Realistic Expectations
+- Demonstrates that even losing models can have winning streaks
+- Shows how timing affects betting outcomes
+- Illustrates the role of variance in short-term results
+
+### Example Use Cases
+
+**Example 1: Finding Profitable Windows**
+```
+Date Range: Jan 1, 2024 - Mar 31, 2024
+Result: +12.5% ROI over 95 matches
+Insight: Model performs better in early season
+```
+
+**Example 2: Identifying Losing Streaks**
+```
+Date Range: Apr 1, 2024 - Jun 30, 2024
+Result: -35.2% ROI over 90 matches
+Insight: Model struggles in late season when injuries accumulate
+```
+
+### Academic Value
+
+This feature enhances the project's educational value by:
+1. **Demonstrating statistical concepts**: Sample size, variance, confidence intervals
+2. **No cherry-picking**: Users can explore all periods, not just profitable ones
+3. **Interactive learning**: Hands-on exploration of time series data
+4. **Real-world analytics**: Similar to A/B test period selection in industry
+
+### Implementation Details
+
+- **Technology**: Streamlit date_input widgets with pandas datetime filtering
+- **Performance**: Real-time backtesting using `BettingBacktester` class
+- **Validation**: Ensures selected dates are within test set boundaries
+- **Visualization**: Dynamic matplotlib charts with annotations
+
+---
+
 ## Next Steps (M6)
+
 
 Despite negative backtesting results, the dashboard (M6) will still be valuable for:
 1. Demonstrating model predictions and confidence

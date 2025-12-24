@@ -17,6 +17,7 @@ This system predicts football match outcomes (Home/Draw/Away), calibrates probab
 - ✅ Probability calibration (Brier Score < 0.20)
 - ✅ Kelly Criterion bankroll management
 - ✅ Interactive Streamlit dashboard
+- ✅ **Time period analysis** (custom date range backtesting)
 - ✅ Time-series aware validation (no data leakage)
 - ✅ Honest reporting of negative results
 
