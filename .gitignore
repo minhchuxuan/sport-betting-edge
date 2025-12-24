@@ -21,13 +21,6 @@ env/
 .idea/
 *.swp
 
-# Data files
-data/raw/*.csv
-data/processed/*.parquet
-
-# Models
-models/*.joblib
-models/*.pkl
 
 # Environment
 .env
@@ -35,7 +28,3 @@ models/*.pkl
 # OS
 .DS_Store
 Thumbs.db
-
-# Reports
-reports/figures/*.png
-reports/figures/*.jpg
