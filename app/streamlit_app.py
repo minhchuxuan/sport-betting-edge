@@ -17,6 +17,28 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 from evaluation.metrics import calculate_ev, calculate_kelly_stake, calculate_implied_prob
 
+# Figure save directory
+FIGURES_DIR = Path(__file__).parent.parent / 'reports' / 'figures'
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+
+def save_and_show_figure(fig, filename):
+    """
+    Save figure to reports/figures and display in Streamlit.
+    
+    Args:
+        fig: matplotlib figure object
+        filename: name of file (without path, with .png extension)
+    """
+    # Save figure
+    save_path = FIGURES_DIR / filename
+    fig.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white')
+    
+    # Display in Streamlit
+    st.pyplot(fig)
+    
+    # Close figure to free memory
+    plt.close(fig)
+
 # Page config
 st.set_page_config(
     page_title="Sports Betting Edge Dashboard",
@@ -708,9 +730,23 @@ def main():
                 # Annotate peak and final if enough bets
                 if len(bankroll_series) > 5:
                     peak_idx = np.argmax(bankroll_series)
-                    ax.annotate(f'Peak: ${bankroll_series[peak_idx]:.2f}', 
-                               xy=(peak_idx, bankroll_series[peak_idx]), 
-                               xytext=(peak_idx + len(bankroll_series)*0.05, bankroll_series[peak_idx] + bankroll*0.05),
+                    peak_val = bankroll_series[peak_idx]
+                    
+                    # Calculate y-axis range for smart positioning
+                    y_range = max(bankroll_series) - min(bankroll_series)
+                    y_max = max(bankroll_series)
+                    
+                    # If peak is in top 20% of chart, annotate below; otherwise above
+                    if peak_val > (y_max - 0.2 * y_range):
+                        # Peak near top - annotate below
+                        text_y = peak_val - bankroll*0.08
+                    else:
+                        # Peak has room above - annotate above
+                        text_y = peak_val + bankroll*0.05
+                    
+                    ax.annotate(f'Peak: ${peak_val:.2f}', 
+                               xy=(peak_idx, peak_val), 
+                               xytext=(peak_idx + len(bankroll_series)*0.05, text_y),
                                arrowprops=dict(arrowstyle='->', color='green', lw=1.5))
                     
                     final_val = bankroll_series[-1]

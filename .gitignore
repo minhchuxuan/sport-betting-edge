@@ -28,3 +28,7 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Reports
+reports/figures/*.png
+reports/figures/*.jpg
